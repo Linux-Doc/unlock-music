@@ -1,8 +1,15 @@
-import {GetFileInfo, GetMetaCoverURL} from "./util";
-import {AudioMimeType, BytesHasPrefix, GetArrayBuffer, SniffAudioExt} from "@/decrypt/utils.ts";
+import {
+    AudioMimeType,
+    BytesHasPrefix,
+    GetArrayBuffer,
+    GetCoverFromFile,
+    GetMetaFromFile,
+    SniffAudioExt
+} from "@/decrypt/utils.ts";
 import {Decrypt as RawDecrypt} from "@/decrypt/raw.ts";
 
 import {parseBlob as metaParseBlob} from "music-metadata-browser";
+import {DecryptResult} from "@/decrypt/entity";
 
 const MagicHeader = [
     0x79, 0x65, 0x65, 0x6C, 0x69, 0x6F, 0x6E, 0x2D,
@@ -10,13 +17,13 @@ const MagicHeader = [
 ]
 const PreDefinedKey = "MoOtOiTvINGwd2E6n0E1i7L5t2IoOoNk"
 
-export async function Decrypt(file: File, raw_filename: string, _: string) {
+export async function Decrypt(file: File, raw_filename: string, _: string): Promise<DecryptResult> {
     const oriData = new Uint8Array(await GetArrayBuffer(file));
     if (!BytesHasPrefix(oriData, MagicHeader)) {
         if (SniffAudioExt(oriData) === "aac") {
-            return await RawDecrypt(file, raw_filename, "aac", true)
+            return await RawDecrypt(file, raw_filename, "aac", false)
         }
-        return {status: false, message: "Not a valid kwm file!"}
+        throw Error("not a valid kwm file")
     }
 
     let fileKey = oriData.slice(0x18, 0x20)
@@ -32,19 +39,16 @@ export async function Decrypt(file: File, raw_filename: string, _: string) {
     let musicBlob = new Blob([audioData], {type: mime});
 
     const musicMeta = await metaParseBlob(musicBlob);
-    const info = GetFileInfo(musicMeta.common.artist, musicMeta.common.title, raw_filename);
-
-    const imgUrl = GetMetaCoverURL(musicMeta);
-
+    const {title, artist} = GetMetaFromFile(raw_filename, musicMeta.common.title, musicMeta.common.artist)
     return {
-        status: true,
-        title: info.title,
-        artist: info.artist,
-        ext: ext,
         album: musicMeta.common.album,
-        picture: imgUrl,
+        picture: GetCoverFromFile(musicMeta),
         file: URL.createObjectURL(musicBlob),
-        mime: mime
+        blob: musicBlob,
+        mime,
+        title,
+        artist,
+        ext
     }
 }
 
